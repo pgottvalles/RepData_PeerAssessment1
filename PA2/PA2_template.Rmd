@@ -1,0 +1,176 @@
+---
+title: "PA2_template - Analasys of Weather Events Across the USA"
+output: html_document
+---
+
+
+# Introduction
+
+This analysis provides a first level investigation of the data in the National Weather Service Storm data database.The purpose of the analysis is to focus on the events most harmful to population health and which have the most impact on the economy of the U.S. The analysis was performed by examining the Storm data data set <https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2>. The file was downloaded into the working directory. The file was saved into the local file “StormData.csv.bz2”. The analysis was performed by selecting the headings that have the most impact on the questions raised. These include INJURIES, FATALITIES, PROPDMG and CROPDMG.The data were evaluated and ranked for analyse perspective.The process for analysis and findings are included below.
+
+# Data Processing
+
+First of all here the Software configuration used
+```{r}
+x <- sessionInfo()
+x
+```
+
+
+
+As described above. the raw data file was downloaded into the working directory for processing.The R method of processing required the libraries “plyr” and “lubridate” to be pre-loaded.The data was then loaded. As the data was uncompressed and read, the setting, “StringsAsFactors” was used to make Event types easy to read.
+
+```{r}
+cache=TRUE 
+setwd("/home/patrick/Documents/R_Work_Space/Reproductible Reasearch")
+furl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+fname <- "StormData.csv.bz2"
+##download.file(furl, destfile = fname, method = "curl")
+ds <- read.csv(bzfile(fname),stringsAsFactors=FALSE )
+
+```
+
+In order to ease data analysis, 2 varaibales are added to the dataset: **BGN_YEAR** and **EVTYPE_CAT**
+
+```{r}
+library(plyr)
+library(lubridate)
+library(ggplot2)
+ds$BGN_YEAR <- year(as.Date(ds$BGN_DATE,"%m/%d/%Y"))
+```
+
+Event codes available in the dataset are redundant.
+They have been grouped under the **EVTYPE_CAT** variable as follow:
+
+- **Flood** like (FLOOD; TIDES; HEAVY RAIN; HIGH WAVES; TORRENTIAL RAIN; RAINFALL; SHOWER; high surf; TSUNAMI; PRECIPITATION; SWELLS)
+
+- **Cold** like (Snow; Wint; Freez; Glaze; Freez; Glaze; BLIZZARD; Chill; Cold; Ice; Low temp; Frost; Icy; Cool)
+
+- **Hail** like (HAIL)
+
+- **Storm** like (HURRICANE; Wind; TYPHOON; THUNDER; STORM; TSTM; BLOWING DUST; LIGHTNING; WALL CLOUD; FUNNEL; WND)
+
+- **Tornado** like (TORNADO; GUSTNADO)
+
+- **Heat** like (Heat; High tem; Fire; Dry; BELOW NORMAL PRECIPITATION; DUST; WARM; Hot)
+
+find bellow the code for that categorization
+```{r}
+ds$EVTYPE_CAT[grepl("*FLOOD*|*TIDES*|*HEAVY RAIN*|*HIGH WAVES*|TORRENTIAL RAIN|*RAINFALL*|*SHOWER|*high surf*|TSUNAMI|*PRECIPITATION*|*SWELLS",ignore.case = TRUE,ds$EVTYPE)] <- "Flood"
+
+ds$EVTYPE_CAT[grepl("Snow*|Wint*|Freez*|Glaze*|Freez*|Glaze*|BLIZZARD*|Chill*|Cold*|*Ice*|*Low temp*|Frost*|Icy*|*Cool*",ignore.case = TRUE,ds$EVTYPE)] <- "Cold"
+
+ds$EVTYPE_CAT[grepl("HAIL*",ignore.case = TRUE,ds$EVTYPE)] <- "Hail"
+
+ds$EVTYPE_CAT[grepl("HURRICANE*|Wind*|*TYPHOON*|*THUNDER*|*STORM*|TSTM*|BLOWING DUST*|LIGHTNING*|*WALL CLOUD*|*FUNNEL*|WND",ignore.case = TRUE,ds$EVTYPE)] <- "Storm"
+
+ds$EVTYPE_CAT[grepl("TORNADO*|GUSTNADO*",ignore.case = TRUE,ds$EVTYPE)] <- "Tornado"
+
+ds$EVTYPE_CAT[grepl("*Heat*|*High tem*|*Fire*|Dry*|BELOW NORMAL PRECIPITATION|*DUST|WARM*|Hot*",ignore.case = TRUE,ds$EVTYPE)] <- "Heat"
+```
+
+Data is then aggregated in yearly and EVTYPE_CAT level and inserted in a new dataset called **tot yearly** as follow.
+
+```{r}
+tot_yearly<- ddply(ds,
+                   .(EVTYPE_CAT,BGN_YEAR),
+                   summarize,
+                   tot_i=sum(INJURIES),
+                   tot_f=sum(FATALITIES),
+                   tot_pd=sum(PROPDMG),
+                   tot_cd=sum(CROPDMG))
+
+colnames(tot_yearly) <- c("EVENT_CATEGORY","YEAR","injuries","fatalities","prop_damage","crop_damage")
+```
+
+
+Similarely tot is a new dataset where data is aggregated on EVTYPE_CAT level
+
+```{r}
+tot<- ddply(ds,
+            .(EVTYPE_CAT),
+            summarize,
+            tot_i=sum(INJURIES),
+            tot_f=sum(FATALITIES),
+            tot_pd=sum(PROPDMG),
+            tot_cd=sum(CROPDMG))
+colnames(tot) <- c("EVENT_CATEGORY","injuries","fatalities","prop_damage","crop_damage")
+```
+
+For analysis ease persecptive we denormalise tot_yearly so that impact type (injuries, fatalities, prop damage and crop damage) will be consolidate in a new columns called **IMPACT**. The new dataset is called **consolidation** and constructed as follow:
+
+```{r}
+injuries_yearly <- tot_yearly[,c(1,2,3)]
+colnames(injuries_yearly) <- c("EVENT_CATEGORY","YEAR","SUM")
+injuries_yearly$IMPACT <- "INJURIES"
+
+fatalities_yearly <- tot_yearly[,c(1,2,4)]
+colnames(fatalities_yearly) <- c("EVENT_CATEGORY","YEAR","SUM")
+fatalities_yearly$IMPACT <- "FATALITIES"
+
+propdmg_yearly <- tot_yearly[,c(1,2,5)]
+colnames(propdmg_yearly) <- c("EVENT_CATEGORY","YEAR","SUM")
+propdmg_yearly$IMPACT <- "PROPDMG"
+
+cropdmg_yearly <- tot_yearly[,c(1,2,6)]
+colnames(cropdmg_yearly) <- c("EVENT_CATEGORY","YEAR","SUM")
+cropdmg_yearly$IMPACT <- "CROPDMG"
+
+#Combining the previously created datasets
+consolidation <- rbind(injuries_yearly,fatalities_yearly,propdmg_yearly,cropdmg_yearly)
+
+#Createing factor for EVENT_CATEGORY and IMPACT
+consolidation$EVENT_CATEGORY <- factor(consolidation$EVENT_CATEGORY)
+consolidation$IMPACT <- factor(consolidation$IMPACT)
+```
+
+
+# Results
+
+## Health impact impact
+
+First of all Let's see which type of event has caused most of the casualties
+
+```{r}
+tot_health_impact <- tot[,c(1,2,3)]
+tot_health_impact <- tot_health_impact[order(-tot_health_impact$fatalities),]
+print(tot_health_impact)
+```
+
+We can clearly see that **Tornados have contributed to most of the casualties** and therefore have had the **biggest impact of Health**
+
+This clearly coralated by the following graph which represent fatalities and injuries historical trend broken down by event type
+```{r}
+health_impact <- subset(consolidation, consolidation$IMPACT %in% c("INJURIES","FATALITIES"))
+
+qplot(YEAR,SUM,data=health_impact,
+             geom=c("line"),
+             facets=EVENT_CATEGORY~IMPACT)
+```
+
+
+
+## Economical Impact
+
+First of all Let's see which type of event has caused most damages
+
+```{r}
+tot_economic_impact <- tot[,c(1,4,5)]
+tot_economic_impact$tot_damage <- tot_economic_impact$prop_damage + tot_economic_impact$crop_damage
+tot_economic_impact<- tot_economic_impact[order(-tot_economic_impact$tot_damage),]
+print(tot_economic_impact)
+```
+
+We can clearly see that **Storms have contributed to most of the damages** and therefore have had the **biggest impact of economy**
+
+This clearly coralated by the following graph which represent prop and crop damages historical trend broken down by event type
+
+```{r}
+economic_impact <- subset(consolidation, consolidation$IMPACT %in% c("CROPDMG","PROPDMG"))
+
+qplot(YEAR,SUM,data=economic_impact,
+             geom=c("line"),
+             facets=EVENT_CATEGORY~IMPACT)
+```
+
+To be noted that **amount of storm, Flood and Tornados yearly damage are in constant increase** over the time
